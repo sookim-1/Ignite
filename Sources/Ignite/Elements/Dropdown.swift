@@ -12,7 +12,7 @@ public protocol DropdownElement: InlineHTML {}
 /// Renders a button that presents a menu of information when pressed.
 /// Can be used as a free-floating element on your page, or in
 /// a `NavigationBar`.
-public struct Dropdown: BlockHTML, NavigationItem {
+public struct Dropdown: BlockHTML, NavigationItem, DropdownElement {
     /// The content and behavior of this HTML.
     public var body: some HTML { self }
 
@@ -87,26 +87,112 @@ public struct Dropdown: BlockHTML, NavigationItem {
     /// - Parameter context: The current publishing context.
     /// - Returns: The HTML for this element.
     public func render(context: PublishingContext) -> String {
-        Group(isTransparent: isNavigationItem) {
-            if isNavigationItem {
-                let hasActiveItem = items.contains { context.currentRenderingPath == ($0 as? Link)?.url }
+        if isNavigationItem {
+            Group(isTransparent: true) {
+                let hasActiveItem = items.contains {
+                    if let link = $0 as? Link {
+                        return context.currentRenderingPath == link.url
+                    } else if let dropdown = $0 as? Dropdown {
+                        return dropdown.items.contains {
+                            context.currentRenderingPath == ($0 as? Link)?.url
+                        }
+                    }
+                    return false
+                }
 
                 Link(title, target: "#")
                     .customAttribute(name: "role", value: "button")
                     .class("dropdown-toggle", "nav-link", hasActiveItem ? "active" : nil)
                     .data("bs-toggle", "dropdown")
                     .aria("expanded", "false")
-            } else {
-                Button(title)
-                    .class(Button.classes(forRole: role, size: size))
-                    .class("dropdown-toggle")
-                    .data("bs-toggle", "dropdown")
-                    .aria("expanded", "false")
+
+                List {
+                    ForEach(items) { item in
+                        if let nestedDropdown = item as? Dropdown {
+                            ListItem {
+                                nestedDropdown.renderNestedDropdown(context)
+                            }
+                            .class("dropend")
+                        } else if let link = item as? Link {
+                            ListItem {
+                                link.class("dropdown-item")
+                                    .class(context.currentRenderingPath == link.url ? "active" : nil)
+                                    .aria("current", context.currentRenderingPath == link.url ? "page" : nil)
+                            }
+                        } else if let text = item as? Text {
+                            ListItem {
+                                text.class("dropdown-header")
+                            }
+                        }
+                    }
+                }
+                .listMarkerStyle(.unordered(.automatic))
+                .class("dropdown-menu")
             }
+            .attributes(attributes)
+            .class("dropdown")
+            .render(context: context)
+        } else {
+            Group(isTransparent: isNavigationItem) {
+                if isNavigationItem {
+                    let hasActiveItem = items.contains { context.currentRenderingPath == ($0 as? Link)?.url }
+
+                    Link(title, target: "#")
+                        .customAttribute(name: "role", value: "button")
+                        .class("dropdown-toggle", "nav-link", hasActiveItem ? "active" : nil)
+                        .data("bs-toggle", "dropdown")
+                        .aria("expanded", "false")
+                } else {
+                    Button(title)
+                        .class(Button.classes(forRole: role, size: size))
+                        .class("dropdown-toggle")
+                        .data("bs-toggle", "dropdown")
+                        .aria("expanded", "false")
+                }
+
+                List {
+                    ForEach(items) { item in
+                        if let link = item as? Link {
+                            ListItem {
+                                link.class("dropdown-item")
+                                    .class(context.currentRenderingPath == link.url ? "active" : nil)
+                                    .aria("current", context.currentRenderingPath == link.url ? "page" : nil)
+                                    .data("nav-path", link.url)
+                                    .onClick("saveNavigationState(this.getAttribute('data-nav-path'))")
+                            }
+                        } else if let text = item as? Text {
+                            ListItem {
+                                text.class("dropdown-header")
+                            }
+                        }
+                    }
+                }
+                .listMarkerStyle(.unordered(.automatic))
+                .class("dropdown-menu")
+            }
+            .attributes(attributes)
+            .class("dropdown")
+            .render(context: context)
+        }
+    }
+
+    /// 중첩된 드롭다운을 위한 렌더링 로직 추가
+    private func renderNestedDropdown(_ context: PublishingContext) -> String {
+        Group {
+            Link(title, target: "#")
+                .customAttribute(name: "role", value: "button")
+                .class("dropdown-item", "dropdown-toggle")
+                .data("bs-toggle", "dropdown")
+                .aria("expanded", "false")
 
             List {
                 ForEach(items) { item in
-                    if let link = item as? Link {
+                    if let nestedDropdown = item as? Dropdown {
+                        ListItem {
+                            nestedDropdown.renderNestedDropdown(context)
+                        }
+                        .class("dropend") // 중첩 드롭다운의 방향 지정
+                    } else if let link = item as? Link {
                         ListItem {
                             link.class("dropdown-item")
                                 .class(context.currentRenderingPath == link.url ? "active" : nil)
@@ -119,10 +205,8 @@ public struct Dropdown: BlockHTML, NavigationItem {
                     }
                 }
             }
-            .listMarkerStyle(.unordered(.automatic))
             .class("dropdown-menu")
         }
-        .attributes(attributes)
         .class("dropdown")
         .render(context: context)
     }
